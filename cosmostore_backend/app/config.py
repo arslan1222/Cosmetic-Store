@@ -25,39 +25,91 @@ class Config:
     # DATABASE
     # ==================================================
 
-    DB_USER = os.environ.get(
-        "DB_USER",
-        "root"
-    )
+    # DB_USER = os.environ.get(
+    #     "DB_USER",
+    #     "root"
+    # )
 
-    DB_PASSWORD = os.environ.get(
-        "DB_PASSWORD",
-        ""
-    )
+    # DB_PASSWORD = os.environ.get(
+    #     "DB_PASSWORD",
+    #     ""
+    # )
 
-    DB_HOST = os.environ.get(
-        "DB_HOST",
-        "localhost"
-    )
+    # DB_HOST = os.environ.get(
+    #     "DB_HOST",
+    #     "localhost"
+    # )
 
-    DB_PORT = os.environ.get(
-        "DB_PORT",
-        "3306"
-    )
+    # DB_PORT = os.environ.get(
+    #     "DB_PORT",
+    #     "3306"
+    # )
 
-    DB_NAME = os.environ.get(
-        "DB_NAME",
-        "sys"
-    )
+    # DB_NAME = os.environ.get(
+    #     "DB_NAME",
+    #     "sys"
+    # )
 
-    SQLALCHEMY_DATABASE_URI = os.environ.get(
-        "DATABASE_URL",
-        f"mysql+pymysql://"
-        f"{DB_USER}:{DB_PASSWORD}"
-        f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-    )
+    # SQLALCHEMY_DATABASE_URI = os.environ.get(
+    #     "DATABASE_URL",
+    #     f"mysql+pymysql://"
+    #     f"{DB_USER}:{DB_PASSWORD}"
+    #     f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    # )
+
+    # SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    
+    # ==================================================
+    # DATABASE
+    # ==================================================
+
+    from sqlalchemy.engine import make_url
+
+    MYSQL_PUBLIC_URL = os.environ.get("MYSQL_PUBLIC_URL")
+    DATABASE_URL = os.environ.get("DATABASE_URL")
+
+    if MYSQL_PUBLIC_URL:
+        database_url = make_url(MYSQL_PUBLIC_URL)
+        SQLALCHEMY_DATABASE_URI = database_url.set(
+            drivername="mysql+pymysql"
+        ).render_as_string(hide_password=False)
+
+    elif DATABASE_URL:
+        database_url = make_url(DATABASE_URL)
+
+        if database_url.drivername in ("mysql", "mariadb"):
+            database_url = database_url.set(
+                drivername="mysql+pymysql"
+            )
+
+        SQLALCHEMY_DATABASE_URI = database_url.render_as_string(
+            hide_password=False
+        )
+
+    else:
+        DB_USER = os.environ.get("DB_USER", "root")
+        DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
+        DB_HOST = os.environ.get("DB_HOST", "localhost")
+        DB_PORT = os.environ.get("DB_PORT", "3306")
+        DB_NAME = os.environ.get("DB_NAME", "cosmostore_db2")
+
+        SQLALCHEMY_DATABASE_URI = (
+            f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}"
+            f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+        )
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        "pool_pre_ping": True,
+        "pool_recycle": 280,
+        "pool_timeout": 30,
+        "connect_args": {
+            "connect_timeout": 15
+        }
+    }
+
 
 
     # ==================================================
