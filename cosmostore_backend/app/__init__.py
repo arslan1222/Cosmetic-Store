@@ -1,6 +1,7 @@
 import os
 
 from flask import Flask
+from werkzeug.middleware.proxy_fix import ProxyFix
 from dotenv import load_dotenv
 
 from app.config import config_map
@@ -28,10 +29,17 @@ def create_app(config_name=None):
     # CONFIGURATION
     # ==================================================
 
+    # Render sets RENDER=true automatically, so production settings apply
+    # there even if FLASK_ENV was never added to the dashboard.
+    on_render = os.environ.get("RENDER", "").lower() == "true"
+
     config_name = config_name or os.environ.get(
         "FLASK_ENV",
-        "development"
+        "production" if on_render else "development"
     )
+
+    if on_render:
+        config_name = "production"
 
     app.config.from_object(
         config_map.get(
@@ -41,23 +49,36 @@ def create_app(config_name=None):
     )
 
     # ==================================================
+    # PROXY (Render terminates HTTPS and forwards requests)
+    # ==================================================
+
+    # Without this, Flask sees the proxy's IP/http scheme instead of the
+    # real client, which breaks secure cookies and Flask-Login sessions.
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app,
+        x_for=1,
+        x_proto=1,
+        x_host=1,
+    )
+
+    # ==================================================
     # SESSION CONFIGURATION
     # ==================================================
 
-    # Allow Flask-Login session cookie to be used
-    # by the React frontend.
+    # Frontend and backend live on different *.onrender.com subdomains,
+    # which browsers treat as cross-site. The session cookie must be
+    # SameSite=None + Secure or it is never sent with API requests.
+    is_prod = config_name == "production" or on_render
+
+    cookie_samesite = "None" if is_prod else "Lax"
+
     app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = cookie_samesite
+    app.config["SESSION_COOKIE_SECURE"] = is_prod
 
-    # localhost:5173 -> localhost:5000
-    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-
-    # Development is running on HTTP
-    app.config["SESSION_COOKIE_SECURE"] = False
-
-    # Remember-me cookie
     app.config["REMEMBER_COOKIE_HTTPONLY"] = True
-    app.config["REMEMBER_COOKIE_SAMESITE"] = "Lax"
-    app.config["REMEMBER_COOKIE_SECURE"] = False
+    app.config["REMEMBER_COOKIE_SAMESITE"] = cookie_samesite
+    app.config["REMEMBER_COOKIE_SECURE"] = is_prod
 
     # ==================================================
     # DIRECTORIES
@@ -89,20 +110,12 @@ def create_app(config_name=None):
     # CORS
     # ==================================================
 
-    cors_origins = app.config.get(
-        "CORS_ORIGINS",
-        [
-            "https://smart-cosmetic-e-commerce-system.onrender.com",
-            "http://localhost:5173",
-            "http://localhost:3000",
-        ]
-    )
+    cors_origins = app.config.get("CORS_ORIGINS", [])
 
-    # If CORS_ORIGINS comes from .env as a string,
-    # convert it to a list.
+    # CORS_ORIGINS may arrive from the environment as a comma-separated string.
     if isinstance(cors_origins, str):
         cors_origins = [
-            origin.strip()
+            origin.strip().rstrip("/")
             for origin in cors_origins.split(",")
             if origin.strip()
         ]
@@ -113,8 +126,12 @@ def create_app(config_name=None):
             r"/api/*": {
                 "origins": cors_origins,
                 "supports_credentials": True,
+                "allow_headers": ["Content-Type", "Authorization"],
+                "methods": [
+                    "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"
+                ],
             }
-        }
+        },
     )
 
     # ==================================================
@@ -209,5 +226,17 @@ def create_app(config_name=None):
             "success": False,
             "message": "Internal server error."
         }, 500
+
+    # ==================================================
+    # CREATE TABLES
+    # ==================================================
+
+    # run.py only calls create_all() under __main__, which gunicorn never
+    # executes, so tables must be created here for Render deployments.
+    with app.app_context():
+        try:
+            db.create_all()
+        except Exception:
+            app.logger.exception("db.create_all() failed")
 
     return app
