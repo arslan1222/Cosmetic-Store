@@ -311,9 +311,13 @@ class DevelopmentConfig(Config):
 class ProductionConfig(Config):
     DEBUG = False
 
-    # HTTPS production configuration
     SESSION_COOKIE_SECURE = True
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = "None"
+
     REMEMBER_COOKIE_SECURE = True
+    REMEMBER_COOKIE_HTTPONLY = True
+    REMEMBER_COOKIE_SAMESITE = "None"
 
 
 # ==================================================
