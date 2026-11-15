@@ -92,6 +92,7 @@ def create_app(config_name=None):
     cors_origins = app.config.get(
         "CORS_ORIGINS",
         [
+            "https://smart-cosmetic-e-commerce-system.onrender.com",
             "http://localhost:5173",
             "http://localhost:3000",
         ]
