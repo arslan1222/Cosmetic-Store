@@ -47,7 +47,7 @@ class Config:
 
     DB_NAME = os.environ.get(
         "DB_NAME",
-        "cosmostore_db2"
+        "sys"
     )
 
     SQLALCHEMY_DATABASE_URI = os.environ.get(
