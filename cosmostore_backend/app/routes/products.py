@@ -11,6 +11,7 @@ from werkzeug.utils import secure_filename
 from app.extensions import db
 from app.models import Product, ProductImage, Category, Store, RoleEnum, Review
 from app.utils import api_response, role_required, slugify
+from app.storage import save_image, delete_image
 
 products_bp = Blueprint("products", __name__, url_prefix="/api")
 
@@ -234,7 +235,6 @@ def upload_product_image(product_id):
         return api_response(False, "No image file(s) provided.", status=400)
 
     upload_dir = current_app.config["UPLOAD_FOLDER"]
-    os.makedirs(upload_dir, exist_ok=True)
 
     saved = []
     for file in files:
@@ -244,10 +244,13 @@ def upload_product_image(product_id):
             return api_response(False, f"'{file.filename}' is not a supported image type.", status=400)
 
         unique_name = f"product_{product_id}_{uuid.uuid4().hex[:8]}_{secure_filename(file.filename)}"
-        save_path = os.path.join(upload_dir, unique_name)
-        file.save(save_path)
+        try:
+            image_url = save_image(file, upload_dir, unique_name)
+        except Exception:
+            current_app.logger.exception("Image upload failed")
+            db.session.rollback()
+            return api_response(False, "Image upload failed. Please try again.", status=500)
 
-        image_url = f"/static/uploads/{unique_name}"
         next_order = (db.session.query(db.func.coalesce(db.func.max(ProductImage.sort_order), -1))
                       .filter_by(product_id=product.id).scalar()) + 1
         img = ProductImage(product_id=product.id, image_url=image_url, sort_order=next_order)
@@ -279,14 +282,8 @@ def delete_product_image(product_id, image_id):
 
     image = ProductImage.query.filter_by(id=image_id, product_id=product_id).first_or_404()
 
-    # Remove the physical file (best-effort; missing file shouldn't block the DB delete)
-    try:
-        rel_path = image.image_url.replace("/static/uploads/", "")
-        file_path = os.path.join(current_app.config["UPLOAD_FOLDER"], rel_path)
-        if os.path.exists(file_path):
-            os.remove(file_path)
-    except Exception:
-        pass
+    # Remove the stored file (best-effort; a missing file shouldn't block the DB delete)
+    delete_image(image.image_url, current_app.config["UPLOAD_FOLDER"])
 
     was_cover = product.image_url == image.image_url
     db.session.delete(image)
