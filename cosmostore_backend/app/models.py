@@ -2,6 +2,7 @@ import enum
 from datetime import datetime
 
 from flask_login import UserMixin
+from sqlalchemy.dialects.mysql import LONGBLOB
 
 from app.extensions import db, bcrypt
 
@@ -504,3 +505,15 @@ class Notification(db.Model):
             "is_read": self.is_read,
             "created_at": self.created_at.isoformat(),
         }
+
+
+class StoredImage(db.Model):
+    """Image bytes kept in the database so uploads survive Render's
+    ephemeral disk. Served by GET /api/media/<filename>."""
+    __tablename__ = "stored_images"
+
+    id = db.Column(db.Integer, primary_key=True)
+    filename = db.Column(db.String(255), unique=True, nullable=False, index=True)
+    mimetype = db.Column(db.String(100), nullable=False, default="image/jpeg")
+    data = db.Column(db.LargeBinary().with_variant(LONGBLOB, "mysql"), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
