@@ -24,11 +24,13 @@ def cloudinary_enabled():
 
 
 def db_storage_enabled():
-    """Store images in the database on Render (or when STORE_IMAGES_IN_DB=1)."""
-    flag = os.environ.get("STORE_IMAGES_IN_DB")
-    if flag is not None:
-        return flag == "1"
-    return os.environ.get("RENDER", "").lower() == "true"
+    """Images go into the database unless Cloudinary is configured.
+
+    This is the default everywhere (not only on Render) so a missing
+    environment variable can never push uploads back onto the ephemeral disk.
+    Set STORE_IMAGES_IN_DB=0 to save to the local uploads folder instead.
+    """
+    return os.environ.get("STORE_IMAGES_IN_DB", "1") != "0"
 
 
 def save_image(file, upload_dir, unique_name):
