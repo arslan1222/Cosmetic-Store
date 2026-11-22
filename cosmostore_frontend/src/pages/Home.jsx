@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowUpRight, ShieldCheck, Store, Sparkles } from "lucide-react";
 import { catalogApi } from "../api/endpoints";
 import heroImage from "../assets/hero.png";
 import ProductCard from "../components/ProductCard";
+import Pagination from "../components/Pagination";
 import { PageSpinner } from "../components/ui";
 
 const CATEGORY_BLURBS = {
@@ -15,25 +16,40 @@ const CATEGORY_BLURBS = {
   Skincare: "Serums, cleansers, and daily SPF",
 };
 
+const PER_PAGE = 8;
+
 export default function Home() {
   const [categories, setCategories] = useState([]);
   const [featured, setFeatured] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const productsRef = useRef(null);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const [catRes, prodRes] = await Promise.all([
-          catalogApi.categories(),
-          catalogApi.products({ per_page: 8, sort: "newest" }),
-        ]);
-        setCategories(catRes.data.data);
-        setFeatured(prodRes.data.data.items);
-      } finally {
-        setLoading(false);
-      }
-    })();
+    catalogApi
+      .categories()
+      .then((res) => setCategories(res.data.data))
+      .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    setLoading(true);
+    catalogApi
+      .products({ per_page: PER_PAGE, sort: "newest", page })
+      .then((res) => {
+        const data = res.data.data;
+        setFeatured(data.items);
+        setTotalPages(data.pages || 1);
+      })
+      .finally(() => setLoading(false));
+  }, [page]);
+
+  const goToPage = (newPage) => {
+    setPage(newPage);
+    // Keep the reader at the product list instead of jumping to the top of the page
+    productsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   return (
     <div>
@@ -111,7 +127,7 @@ export default function Home() {
       </section>
 
       {/* Featured products */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 pb-24">
+      <section ref={productsRef} className="max-w-7xl mx-auto px-4 sm:px-6 pb-24 scroll-mt-24">
         <div className="flex items-center justify-between mb-8">
           <h2 className="text-2xl">Newly listed</h2>
           <Link to="/shop" className="text-sm text-berry-600 hover:underline flex items-center gap-1">
@@ -121,11 +137,14 @@ export default function Home() {
         {loading ? (
           <PageSpinner />
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
-            {featured.map((p) => (
-              <ProductCard key={p.id} product={p} />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
+              {featured.map((p) => (
+                <ProductCard key={p.id} product={p} />
+              ))}
+            </div>
+            <Pagination page={page} pages={totalPages} onPageChange={goToPage} />
+          </>
         )}
       </section>
     </div>
