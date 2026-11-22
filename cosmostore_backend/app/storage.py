@@ -1,4 +1,4 @@
-"""Image storage helper.
+"""Image storage helper (Cloudinary, database, or local disk).
 
 Render's filesystem is ephemeral: anything saved to disk is deleted on every
 redeploy, restart or free-tier spin-down. When CLOUDINARY_URL is set, images
@@ -6,6 +6,7 @@ are uploaded to Cloudinary (permanent URLs). Without it, the app falls back to
 the local uploads folder so local development keeps working.
 """
 
+import mimetypes
 import os
 import re
 
@@ -15,8 +16,19 @@ import cloudinary.uploader
 CLOUDINARY_FOLDER = "cosmostore"
 
 
+MEDIA_PREFIX = "/api/media/"
+
+
 def cloudinary_enabled():
     return bool(os.environ.get("CLOUDINARY_URL"))
+
+
+def db_storage_enabled():
+    """Store images in the database on Render (or when STORE_IMAGES_IN_DB=1)."""
+    flag = os.environ.get("STORE_IMAGES_IN_DB")
+    if flag is not None:
+        return flag == "1"
+    return os.environ.get("RENDER", "").lower() == "true"
 
 
 def save_image(file, upload_dir, unique_name):
@@ -32,6 +44,21 @@ def save_image(file, upload_dir, unique_name):
         )
         return result["secure_url"]
 
+    if db_storage_enabled():
+        from app.extensions import db
+        from app.models import StoredImage
+
+        mimetype = (
+            file.mimetype
+            if (file.mimetype or "").startswith("image/")
+            else mimetypes.guess_type(unique_name)[0] or "image/jpeg"
+        )
+        db.session.add(
+            StoredImage(filename=unique_name, mimetype=mimetype, data=file.read())
+        )
+        db.session.flush()
+        return f"{MEDIA_PREFIX}{unique_name}"
+
     os.makedirs(upload_dir, exist_ok=True)
     file.save(os.path.join(upload_dir, unique_name))
     return f"/static/uploads/{unique_name}"
@@ -40,6 +67,15 @@ def save_image(file, upload_dir, unique_name):
 def delete_image(image_url, upload_dir):
     """Best-effort removal of a stored image (never raises)."""
     try:
+        if image_url and image_url.startswith(MEDIA_PREFIX):
+            from app.extensions import db
+            from app.models import StoredImage
+
+            StoredImage.query.filter_by(
+                filename=image_url[len(MEDIA_PREFIX):]
+            ).delete()
+            return
+
         if image_url and image_url.startswith("http"):
             if "res.cloudinary.com" in image_url and cloudinary_enabled():
                 match = re.search(r"/upload/(?:v\d+/)?(.+)\.[A-Za-z0-9]+$", image_url)
