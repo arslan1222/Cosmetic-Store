@@ -3,12 +3,17 @@ import { useSearchParams } from "react-router-dom";
 import { SlidersHorizontal, X } from "lucide-react";
 import { catalogApi } from "../api/endpoints";
 import ProductCard from "../components/ProductCard";
+import Pagination from "../components/Pagination";
 import { PageSpinner, EmptyState, Select } from "../components/ui";
+
+const PER_PAGE = 12;
 
 export default function Shop() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
@@ -16,6 +21,7 @@ export default function Shop() {
   const categoryId = searchParams.get("category_id") || "";
   const categoryName = searchParams.get("category") || "";
   const sort = searchParams.get("sort") || "newest";
+  const page = Math.max(parseInt(searchParams.get("page"), 10) || 1, 1);
 
   useEffect(() => {
     catalogApi.categories().then((res) => setCategories(res.data.data));
@@ -23,7 +29,7 @@ export default function Shop() {
 
   useEffect(() => {
     setLoading(true);
-    const params = { per_page: 24, sort };
+    const params = { per_page: PER_PAGE, sort, page };
     if (q) params.q = q;
     if (categoryId) params.category_id = categoryId;
 
@@ -36,16 +42,38 @@ export default function Shop() {
 
     catalogApi
       .products(params)
-      .then((res) => setProducts(res.data.data.items))
+      .then((res) => {
+        const data = res.data.data;
+        // Page no longer exists (e.g. products were removed): go to the last one
+        if (data.pages > 0 && page > data.pages) {
+          const next = new URLSearchParams(searchParams);
+          next.set("page", data.pages);
+          setSearchParams(next, { replace: true });
+          return;
+        }
+        setProducts(data.items);
+        setTotal(data.total);
+        setTotalPages(data.pages || 1);
+      })
       .finally(() => setLoading(false));
-  }, [q, categoryId, categoryName, sort, categories]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, categoryId, categoryName, sort, page, categories]);
 
   const updateParam = (key, value) => {
     const next = new URLSearchParams(searchParams);
     if (value) next.set(key, value);
     else next.delete(key);
     if (key !== "category_id") next.delete("category");
+    next.delete("page"); // filters/sort changed -> back to the first page
     setSearchParams(next);
+  };
+
+  const goToPage = (newPage) => {
+    const next = new URLSearchParams(searchParams);
+    if (newPage > 1) next.set("page", newPage);
+    else next.delete("page");
+    setSearchParams(next);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const activeCategory = categories.find((c) => String(c.id) === String(categoryId))?.name || categoryName;
@@ -61,7 +89,11 @@ export default function Shop() {
           <SlidersHorizontal size={14} /> Filters
         </button>
       </div>
-      <p className="text-ink/50 text-sm mb-8">{products.length} products</p>
+      <p className="text-ink/50 text-sm mb-8">
+        {total === 0
+          ? "0 products"
+          : `Showing ${(page - 1) * PER_PAGE + 1}–${Math.min(page * PER_PAGE, total)} of ${total} products`}
+      </p>
 
       <div className="grid md:grid-cols-[220px_1fr] gap-10">
         {/* Filters sidebar */}
@@ -112,11 +144,14 @@ export default function Shop() {
           ) : products.length === 0 ? (
             <EmptyState title="No products found" description="Try a different search term or category." />
           ) : (
-            <div className="grid grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-10">
-              {products.map((p) => (
-                <ProductCard key={p.id} product={p} />
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-10">
+                {products.map((p) => (
+                  <ProductCard key={p.id} product={p} />
+                ))}
+              </div>
+              <Pagination page={page} pages={totalPages} onPageChange={goToPage} />
+            </>
           )}
         </div>
       </div>
