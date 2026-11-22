@@ -175,6 +175,7 @@ def create_app(config_name=None):
     from app.routes.orders import orders_bp
     from app.routes.admin import admin_bp
     from app.routes.payments import payments_bp
+    from app.routes.media import media_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(products_bp)
@@ -182,6 +183,7 @@ def create_app(config_name=None):
     app.register_blueprint(orders_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(payments_bp)
+    app.register_blueprint(media_bp)
 
     # ==================================================
     # HEALTH
